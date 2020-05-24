@@ -1,0 +1,8 @@
+*
+!*.c
+!*.h
+!Makefile
+!LICENSE
+!COPYING
+!README*
+!.git*

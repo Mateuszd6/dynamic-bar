@@ -1,10 +1,14 @@
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
+// TODO: Replace die!
 #define die(e) do { fprintf(stderr, "%s\n", e); exit(EXIT_FAILURE); } while (0);
+
+#define NTHREADS 2
 
 #define ARRAY_COUNT(ARR) ((int)(sizeof(ARR) / sizeof((ARR)[0])))
 
@@ -35,7 +39,13 @@ static bar_entry entries[] =
     { "echo \" `date '+%d %b %H:%M'`\"", "", 10 },
 };
 
-static exec_script_ret bar[ARRAY_COUNT(entries)];
+static exec_script_ret g_bar[ARRAY_COUNT(entries)];
+
+// Non-zero means an update is required.
+static volatile char g_work_queue[ARRAY_COUNT(entries)];
+
+static pthread_mutex_t work_mutex;
+static pthread_cond_t work_cv;
 
 static exec_script_ret
 exec_script(char const* command)
@@ -75,37 +85,17 @@ exec_script(char const* command)
     return retval;
 }
 
-int
-main()
+static void
+update_xroot()
 {
-    // Init bar; set all strings to 0 and statuses to OK.
-    for (unsigned int i = 0; i < ARRAY_COUNT(entries); ++i)
-    {
-        bar[i].status = 0;
-        bar[i].output[0] = 0;
-    }
-
-    // exec_script_ret out = exec_script("echo $BROWSER");
-    for (int i = 0; i < ARRAY_COUNT(entries); ++i)
-    {
-        bar[i] = exec_script(entries[i].command);
-        // exec_script_ret out = exec_script(entries[i].command);
-        // printf("Output [%d]: \"%s\"\n", i, out.output);
-    }
-
-    for (int i = 0; i < ARRAY_COUNT(entries); ++i)
-    {
-
-    }
-
     // TODO: Out of range!
     char buffer[4096];
     buffer[0] = 0;
     strcat(buffer, "xsetroot -name ' ");
-    // TODO: Escape "'"
+    // TODO: Escape "'" ??
     for (int i = 0; i < ARRAY_COUNT(entries); ++i)
     {
-        if (bar[i].output[0] == 0)
+        if (g_bar[i].output[0] == 0)
         {
             printf("%d: SKIPPING\n", i);
             continue;
@@ -114,18 +104,113 @@ main()
         printf("%d: %s'%s'\n",
                i,
                entries[i].head ? entries[i].head : "",
-               bar[i].output);
+               g_bar[i].output);
 
         strcat(buffer, entries[i].head ? entries[i].head : "");
-        strcat(buffer, bar[i].output);
+        strcat(buffer, g_bar[i].output);
 
         if (i < ARRAY_COUNT(entries) - 1)
             strcat(buffer, "   "); // TODO: Custom spearator!
     }
     strcat(buffer, " '");
-
-    // printf("OUTPUT: '%s'\n", buffer);
     exec_script(buffer);
+}
+
+void*
+job(void* arg)
+{
+    pthread_mutex_lock(&work_mutex);
+    for (;;)
+    {
+        pthread_cond_wait(&work_cv, &work_mutex);
+    repeat_scan:
+        printf("Thread %ld begins scanning:\n    ", (long)arg);
+        printf("{ ");
+        for (int i = 0 ; i < ARRAY_COUNT(entries); ++i)
+            printf("%d ", g_work_queue[i]);
+        printf("}\n");
+
+        for (int i = 0 ; i < ARRAY_COUNT(entries); ++i)
+        {
+            if (g_work_queue[i] != 0)
+            {
+                g_work_queue[i] = 0;
+                printf("Thread %ld calculates %dth entry\n", (long)arg, i);
+                pthread_cond_broadcast(&work_cv);
+                pthread_mutex_unlock(&work_mutex);
+
+                exec_script_ret outp = exec_script(entries[i].command);
+                sleep(1);
+
+                pthread_mutex_lock(&work_mutex);
+                printf("Thread %ld finished. Printing!\n", (long)arg);
+                g_bar[i] = outp; // Update i'th entry.
+                g_work_queue[i] = 0; // To be sure.
+                update_xroot();
+                // TODO: Now there is good time to output new version of the bar.
+                goto repeat_scan; // If found an entry, repeat the fullscan.
+            }
+
+        }
+
+        // Always reached with mutex; will wait for more jobs in the first
+        // statement of next loop iteration.
+        printf("Thread %ld is done!\n", (long)arg);
+    }
+
+    // TODO: Use this to notify workers
+    // int pthread_cond_broadcast(pthread_cond_t *cond);
+
+    return 0;
+}
+
+int
+main()
+{
+    // Init bar; set all strings to 0 and statuses to OK.
+    for (unsigned int i = 0; i < ARRAY_COUNT(entries); ++i)
+    {
+        g_bar[i].status = 0;
+        g_bar[i].output[0] = 0;
+    }
+
+    for (int i = 0 ; i < ARRAY_COUNT(entries); ++i)
+        g_work_queue[i] = 1;
+
+    pthread_mutex_init(&work_mutex, 0);
+    pthread_cond_init (&work_cv, 0);
+
+    // Set up working threads.
+    pthread_t thread[NTHREADS];
+    pthread_attr_t attr;
+
+    // TODO: Copypaste and is it a thing?
+    // Initialize and set thread detached attribute
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    for(int i = 0; i < NTHREADS; i++)
+    {
+        printf("Main: creating thread %d\n", i);
+        if (pthread_create(&thread[i], &attr, job, (void*)((long)i)))
+        {
+            // TODO: pthread_create returns an errno, use it!
+            die("pthread_create");
+        }
+    }
+
+    for (;;)
+    {
+        pthread_mutex_lock(&work_mutex);
+        printf("REFRESHING ALL!\n");
+
+        for (int i = 0; i < ARRAY_COUNT(entries); ++i)
+            g_work_queue[i] = 1;
+
+        pthread_cond_broadcast(&work_cv);
+        pthread_mutex_unlock(&work_mutex);
+        sleep(10);
+    }
 
     return 0;
 }
