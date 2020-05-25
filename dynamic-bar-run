@@ -1,0 +1,8 @@
+#!/bin/sh
+
+while true; do
+    dbar &> /dev/null
+
+    xsetroot -name " Dbar died. Restarting... "
+    sleep 5
+done
