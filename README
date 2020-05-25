@@ -1,0 +1,7 @@
+This probably won't work for you, but who knows.
+
+Works very similarly to i3blocks, because that's where I came from before DWM
+times. Most of the i3blocks scripts will work. The program will take only the
+first line, DWM bar does not support colors anyway (at least to my knowledge).
+
+Some frequently called things are implemented straight in C, to save resources.
