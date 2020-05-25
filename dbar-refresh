@@ -9,5 +9,5 @@ if [ $? -eq 0 ]; then
     pkill -10 dbar &> /dev/null
 else
     # dbar died? or was not started, so restart it
-    /home/mateusz/work/dbar/dbar &> /dev/null &
+    dbar &> /dev/null &
 fi
