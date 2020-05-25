@@ -10,17 +10,17 @@
 static bar_entry entries[] =
 {
     { BUILTIN(B_TIMEDATE, " %s"), 5, ET_FAST},
-    { SCRIPT("~/.i3/md/volume.sh 5"), 30, ET_FAST },
+    { SCRIPT("dwm-bar-volume 5"), 30, ET_FAST },
 
-    { SCRIPT("~/.i3/battery-info.sh"), 60, ET_SLOW },
+    { SCRIPT("dwm-bar-bat"), 60, ET_SLOW },
     { BUILTIN(B_TEMP, " %.1f°C"), 5, ET_FAST },
     { BUILTIN(B_CPU, " %.2f%%"), 5, ET_FAST },
     { BUILTIN(B_MEM, " %dM"), 5, ET_FAST },
 
-    { SCRIPT("~/.i3/md/disc.sh"), 3600, ET_SLOW },
-    { SCRIPT("~/.i3/md/mail.sh"), 300, ET_SLOW },
-    { SCRIPT("~/.i3/md/updates.sh"), 3600, ET_SLOW },
-    { SCRIPT("~/.i3/md/wifi.sh"), 30, ET_SLOW },
+    { SCRIPT("dwm-bar-disc"), 3600, ET_SLOW },
+    { SCRIPT("dwm-bar-mail"), 300, ET_SLOW },
+    { SCRIPT("dwm-bar-updates"), 3600, ET_SLOW },
+    { SCRIPT("dwm-bar-wifi"), 30, ET_SLOW },
 };
 
 #endif // CONFIG_H_
