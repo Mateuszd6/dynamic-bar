@@ -1,21 +1,24 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
+#define BAR_BEFORE_FIRST " "
+#define BAR_AFTER_LAST " "
+#define BAR_SEPARATOR "   "
+
 static bar_entry entries[] =
 {
-    { "~/.i3/md/wifi.sh", 30 },
-    { "~/.i3/md/updates.sh", 3600 },
-    { "~/.i3/md/mail.sh", 300 },
-    { "~/.i3/md/disc.sh", 3600 },
+    { BUILTIN(B_TIMEDATE, " %s"), 5 },
+    { SCRIPT("~/.i3/md/volume.sh 5"), 30 },
 
-    // TODO: Optimize and call directly from C
-    { "~/.i3/md/memory.sh", 5 },
-    { "~/.i3/cpu-usage", 5 },
-    { "~/.i3/temp", 5 },
-    { "~/.i3/battery-info.sh", 60 },
+    { SCRIPT("~/.i3/battery-info.sh"), 60 },
+    { BUILTIN(B_TEMP, " %.1f°C"), 5 },
+    { BUILTIN(B_CPU, " %.2f%%"), 5 },
+    { BUILTIN(B_MEM, " %dM"), 5 },
 
-    { "~/.i3/md/volume.sh 5", 30 },
-    { "echo \" `date '+%d %b %H:%M'`\"", 5 },
+    { SCRIPT("~/.i3/md/disc.sh"), 3600 },
+    { SCRIPT("~/.i3/md/mail.sh"), 300 },
+    { SCRIPT("~/.i3/md/updates.sh"), 3600 },
+    { SCRIPT("~/.i3/md/wifi.sh"), 30 },
 };
 
 // Number of threads.
