@@ -5,7 +5,7 @@ static float
 get_temp()
 {
     // TODO: There is considerably more than one file to check.
-    FILE* file = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+    FILE* file = fopen("/sys/class/thermal/thermal_zone8/temp", "r");
     if (!file)
         die("fopen");
 

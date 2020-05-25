@@ -1,0 +1,13 @@
+#!/bin/sh
+
+pkill -10 dbar &> /dev/null
+exit 0
+
+# This version will restart dbar in case it dies and is probably broken.
+ps -C dbar #  &> /dev/null
+if [ $? -eq 0 ]; then
+    pkill -10 dbar &> /dev/null
+else
+    # dbar died? or was not started, so restart it
+    /home/mateusz/work/dbar/dbar &> /dev/null &
+fi

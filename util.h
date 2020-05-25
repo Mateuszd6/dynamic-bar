@@ -1,6 +1,8 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
+#include <stdarg.h>
+
 static void
 die(const char *errstr, ...)
 {

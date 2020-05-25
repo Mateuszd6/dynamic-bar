@@ -17,6 +17,12 @@ typedef enum
 
 typedef enum
 {
+    ET_SLOW,
+    ET_FAST,
+} exectime_t;
+
+typedef enum
+{
     B_MEM,
     B_TIMEDATE,
     B_CPU,
@@ -25,10 +31,11 @@ typedef enum
 
 typedef struct
 {
-    entry_t type;
     char const* command; // In case of builtin type command is a fmt string.
+    entry_t type;
     builtin_t builtin;
     int refresh;
+    exectime_t etime;
 } bar_entry;
 
 typedef struct
@@ -37,8 +44,8 @@ typedef struct
     char output[124]; // Any reasonable output for status bar should fit.
 } exec_script_ret;
 
-#define SCRIPT(CMD) E_SCRIPT, CMD, 0
-#define BUILTIN(BI, FMT) E_BUILTIN, FMT, BI
+#define SCRIPT(CMD) CMD, E_SCRIPT, 0
+#define BUILTIN(BI, FMT) FMT, E_BUILTIN, BI
 
 #include "config.h"
 
@@ -84,8 +91,7 @@ exec_script(char const* command)
             int nbytes = read(link[0], retval.output, 124 - 1);
             if (nbytes == -1)
             {
-                printf("ERRNO: %s\n", strerror(errno));
-                // Interruption is possible, so retry.
+                // It's highly possible that we got an interrupt here, so retry.
                 if (errno == EINTR)
                     goto try_read;
 
@@ -99,7 +105,6 @@ exec_script(char const* command)
         if (newline)
             *newline = 0;
 
-        printf("Ok, now correctly retrieved: '%s'\n", retval.output);
         wait(0);
     }
 
@@ -150,7 +155,7 @@ eval_entry(bar_entry const* entry)
             };
 
             char const* months[] = {
-                "Jan",  "Feb",  "Mar",  "Apr",  "May", "Jun",
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
             };
 
@@ -172,6 +177,10 @@ eval_entry(bar_entry const* entry)
     default:
         die("default");
     }
+
+    // NOTREACHED
+    exec_script_ret rd = {0};
+    return rd;
 }
 
 static void
@@ -194,6 +203,7 @@ update_xroot()
 }
 
 static volatile sig_atomic_t got_sigusr1 = 0;
+static volatile sig_atomic_t got_sigusr2 = 0;
 
 static void
 handle_sigusr1(int sig)
@@ -202,14 +212,27 @@ handle_sigusr1(int sig)
     got_sigusr1 = 1;
 }
 
+static void
+handle_sigusr2(int sig)
+{
+    (void)sig;
+    got_sigusr2 = 1;
+}
+
 int
 main()
 {
-    struct sigaction sa;
-    sa.sa_handler = handle_sigusr1;
-    sigemptyset(&(sa.sa_mask));
-    sigaddset(&(sa.sa_mask), SIGUSR1);
-    sigaction(SIGUSR1, &sa, NULL);
+    struct sigaction sa1;
+    sa1.sa_handler = handle_sigusr1;
+    sigemptyset(&(sa1.sa_mask));
+    sigaddset(&(sa1.sa_mask), SIGUSR1);
+    sigaction(SIGUSR1, &sa1, NULL);
+
+    struct sigaction sa2;
+    sa2.sa_handler = handle_sigusr2;
+    sigemptyset(&(sa2.sa_mask));
+    sigaddset(&(sa2.sa_mask), SIGUSR2);
+    sigaction(SIGUSR2, &sa2, NULL);
 
     for (int i = 0; i < NENTRIES; ++i)
     {
@@ -224,35 +247,58 @@ main()
     int to_sleep = to_sleep_default;
     for (;;)
     {
-        printf("SCHEDULER HAS WOKEN UP!\n");
+        char needs_update[ARRAY_COUNT(entries)];
+        memset(needs_update, 0, sizeof(char) * ARRAY_COUNT(entries));
+
         for (int i = 0; i < NENTRIES; ++i)
         {
-            printf("  %d - %d\n", i, sec_to_refresh[i]);
             sec_to_refresh[i] -= last_slept;
             if (sec_to_refresh[i] <= 0)
             {
                 sec_to_refresh[i] = entries[i].refresh;
-                g_bar[i] = eval_entry(entries + i);
-                update_xroot();
-
-                printf("    TASK %d is scheduled after %d sec\n",
-                       i, entries[i].refresh);
+                needs_update[i] = 1;
             }
 
             if (sec_to_refresh[i] < to_sleep)
                 to_sleep = sec_to_refresh[i];
         }
 
-        printf("SLEEPING FOR: %d\n", to_sleep);
+        // Update only 'fast', and output them at once.
+        for (int i = 0; i < NENTRIES; ++i)
+            if (needs_update[i] && entries[i].etime == ET_FAST)
+                g_bar[i] = eval_entry(entries + i);
+        update_xroot();
+
+        // Now update 'slow' entries. They may take a while, so it's worth to
+        // update bar after each one.
+        for (int i = 0; i < NENTRIES; ++i)
+            if (needs_update[i] && entries[i].etime != ET_FAST)
+            {
+                g_bar[i] = eval_entry(entries + i);
+                update_xroot();
+            }
+
+        got_sigusr1 = 0;
+        got_sigusr2 = 0;
         sleep(to_sleep);
-        if (got_sigusr1)
+        if (got_sigusr1) // SIGUSR1 - refresh all
         {
-            got_sigusr1 = 0;
             for (int i = 0; i < NENTRIES; ++i)
                 sec_to_refresh[i] = 0;
 
             last_slept = 0;
             to_sleep = to_sleep_default;
+            continue;
+        }
+        else if (got_sigusr2) // SIGUSR2 - refresh only fast onces.
+        {
+            for (int i = 0; i < NENTRIES; ++i)
+                if (entries[i].etime == ET_FAST)
+                    sec_to_refresh[i] = 0;
+
+            last_slept = 0;
+            to_sleep = to_sleep_default;
+            continue;
         }
 
         last_slept = to_sleep;

@@ -79,6 +79,8 @@ start_over:
         ssize_t idled = curr.cidle - prev.cidle;
 
         float retval = ((float)(totald - idled)) / totald;
+
+        prev = curr; // Save for future computation.
         return retval;
     }
 }
