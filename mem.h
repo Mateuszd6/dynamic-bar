@@ -11,21 +11,25 @@ typedef struct
     size_t mem_free;
     size_t mem_cached;
     size_t buffers;
+    int status;
 } meminfo;
 
 static meminfo
 mem_usage()
 {
+    char buf[4096];
     meminfo retval = {0};
     FILE* minfo = fopen("/proc/meminfo", "r");
-    if (!minfo)
-        die("fopen");
 
-    char buf[4096];
+    if (!minfo)
+        goto error;
+
     size_t read = fread(buf, 1, 4096, minfo);
     if (!read)
-        die("fread");
-    fclose(minfo);
+        goto error_needs_close;
+
+    if (fclose(minfo) != 0)
+        goto error;
 
     char* memtotal = strstr(buf, "MemTotal:");
     char* scan_head = memtotal + strlen("MemTotal:");
@@ -43,6 +47,12 @@ mem_usage()
     scan_head = memtotal + strlen("Cached:");
     retval.mem_cached = atoi(scan_head);
 
+    return retval;
+
+error_needs_close:
+    fclose(minfo);
+error:
+    retval.status = 1;
     return retval;
 }
 

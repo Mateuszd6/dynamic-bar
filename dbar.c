@@ -68,14 +68,21 @@ exec_script(char const* command)
     exec_script_ret retval = {0};
 
     if (pipe(link) == -1)
-        die("pipe");
+        goto error;
 
     if ((pid = fork()) == -1)
-        die("fork");
+    {
+        close(link[0]);
+        close(link[1]);
+        goto error;
+    }
 
     if (pid == 0)
     {
-        dup2(link[1], STDOUT_FILENO);
+        int dr = dup2(link[1], STDOUT_FILENO);
+        if (dr == -1)
+            die("dup2");
+
         close(link[0]);
         close(link[1]);
 
@@ -94,8 +101,11 @@ exec_script(char const* command)
                 // It's highly possible that we got an interrupt here, so retry.
                 if (errno == EINTR)
                     goto try_read;
-
-                // TODO: Handle other kind of error?
+                else
+                {
+                    close(link[0]);
+                    goto error;
+                }
             }
 
             retval.output[nbytes] = 0;
@@ -105,9 +115,14 @@ exec_script(char const* command)
         if (newline)
             *newline = 0;
 
+        close(link[0]);
         wait(0);
     }
 
+    return retval;
+
+error:
+    retval.status = 1;
     return retval;
 }
 
@@ -128,24 +143,38 @@ eval_entry(bar_entry const* entry)
         case B_MEM:
         {
             meminfo mi = mem_usage();
-            sprintf(retval.output, entry->command, get_free_mem(mi));
+            if (mi.status != 0)
+                retval.status = mi.status;
+            else
+                sprintf(retval.output, entry->command, get_free_mem(mi));
         } break;
 
         case B_CPU:
         {
-            sprintf(retval.output, entry->command, get_cpu_usage() * 100);
+            cpu_usage cpu = get_cpu_usage();
+            if (cpu.status != 0)
+                retval.status = cpu.status;
+            else
+                sprintf(retval.output, entry->command, cpu.usage * 100);
         } break;
 
         case B_TEMP:
         {
-            sprintf(retval.output, entry->command, get_temp());
+            cpu_temp t = get_temp();
+            if (t.status != 0)
+                retval.status = t.status;
+            else
+                sprintf(retval.output, entry->command, t.temp);
         } break;
 
         case B_TIMEDATE:
         {
             time_t current_time = time(0);
             if (current_time == ((time_t)-1))
-                die("time");
+            {
+                retval.status = 1;
+                break;
+            }
 
             struct tm t;
             localtime_r(&current_time, &t);
@@ -266,7 +295,14 @@ main()
         // Update only 'fast', and output them at once.
         for (int i = 0; i < NENTRIES; ++i)
             if (needs_update[i] && entries[i].etime == ET_FAST)
-                g_bar[i] = eval_entry(entries + i);
+            {
+                exec_script_ret r = eval_entry(entries + i);
+                if (r.status != 0) // TODO: Some error reporting?
+                    continue;
+
+                g_bar[i] = r;
+            }
+
         update_xroot();
 
         // Now update 'slow' entries. They may take a while, so it's worth to
@@ -274,7 +310,11 @@ main()
         for (int i = 0; i < NENTRIES; ++i)
             if (needs_update[i] && entries[i].etime != ET_FAST)
             {
-                g_bar[i] = eval_entry(entries + i);
+                exec_script_ret r = eval_entry(entries + i);
+                if (r.status != 0) // TODO: Some error reporting?
+                    continue;
+
+                g_bar[i] = r;
                 update_xroot();
             }
 
